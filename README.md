@@ -103,15 +103,14 @@ Respond in 2–3 short bullets, considering:
 # 5. Mapping the data
 
 - If you are partner coding, *switch partners*.
-- Ask Codex to help you map your data. Pay attention to what happens at first:
+- Discuss with your partner how you could geocode / map the data.
+- Once you have an idea for how to do it, ask Codex to help you map your data. Pay attention to what happens at first:
   - Does it correctly identify what is needed to make a map?
   - Does it confuse attributes (like IDs) with coordinates?
-- Try to figure out how to geocode / map the data:
-  - See if Codex can find the right approach.
-  - See if you can figure it out yourself.
+
 - For the scooter/e‑bike example, the goal is to join trips to a street or trail network such as the  
   [PW Street Centerline dataset](https://opendata.minneapolismn.gov/datasets/pw-street-centerline/about) and then map trip counts by segment.
-- Identify a calculation, join, coordinate interpretation, or mapped value you could verify later. This can be the one required check in Section 7.3; you do not need a separate mapping check.
+- Identify a calculation, join, coordinate interpretation, or mapped value you could verify later. In Section 7.3, you will be asked to do some verification.
 
 **Task 5.1 (in `Codex_Activity.md`):**
 Respond in 2–3 short bullets, considering:
@@ -169,19 +168,19 @@ Review the plan yourself:
 - Does it reuse relevant exploration or mapping work?
 - Is the proposed verification feasible and capable of detecting a meaningful error?
 
-Ask Codex to clarify or revise anything you cannot justify. 
+Ask Codex to clarify or revise anything you cannot justify. If you do not understand the type of analysis or choices it is suggesting, stop! Discuss them with your partner and clarify with Codex.
 
 **Task 7.1 (in `Codex_Activity.md`):**
 
 - Record your final plan in 3–5 bullets.
-- Explain one decision you made while reviewing it. A justified decision to retain a proposed approach counts; you do not need to change the plan just to make a change.
+- Explain one decision you made while reviewing it. A justified decision to retain a proposed approach counts; you do not need to change the plan just to make a change. However, don't just blindly accept what it suggests. Stop and discuss each decision with your partner!
 
 ## 7.2 Implement and inspect
 
-Use the `/plan` toggle to leave Plan mode and confirm it is off **before** requesting implementation. Merely typing “go ahead” does not switch modes. 
+Use the `/plan` toggle to leave Plan mode and confirm it is off **before** requesting implementation, or Press the "Implement this plan" option if it appears.
 
 - You can request the whole small plan or start with a meaningful first step and continue after inspecting it.
-- Keep the work in your existing R or Python analysis file.
+- Keep the work in the R or Python analysis file.
 - Inspect the changed code and outputs. Does the analysis answer your question? Are the results interpretable and relevant?
 - Ask targeted follow-up questions and revise as needed. 
 
