@@ -1,0 +1,160 @@
+---
+title: "Exploring Minneapolis scooter and bike availability"
+author: "Dooly and Sohail"
+format:
+  html:
+    toc: true
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
+
+## What does a row mean?
+
+[Scooter and Bike Availability 2024](https://opendata.minneapolismn.gov/datasets/c9e75387ca8343ab8a68a4f3446cd9bc_0/explore)
+contains hourly availability snapshots. Each record reports `NumberAvailable`
+for a company, poll time, closest street or trail segment, and neighborhood.
+We will check whether those fields uniquely identify records below.
+
+These are availability counts, not trips or unique vehicle counts. A vehicle
+can appear in many consecutive snapshots. The table has no coordinates or
+geometry: `ClosestCenterlineID` is a join key for a separate street/trail dataset.
+The city notes that some centerline information is withheld for privacy or is
+unrecorded for certain vehicle statuses. Missing locations are not zero availability.
+
+For a manageable first look, we use **July 15, 2024, midnight to midnight in
+America/Chicago**. This is a deliberately selected day, not a representative
+sample of the year. Download it from the repository root with
+`python3 analysis/download_availability.py`. All summaries and plots below use
+this one day unless explicitly labeled otherwise.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(jsonlite)
+
+# Support execution from either the analysis directory or repository root.
+root <- if (file.exists("data/availability_metadata.json")) "." else ".."
+meta <- fromJSON(file.path(root, "data/availability_metadata.json"))
+raw <- read_csv(file.path(root, "data/availability_2024-07-15.csv"),
+                col_types = cols(
+                  PollTime = col_double(), CompanyName = col_character(),
+                  NumberAvailable = col_double(), ClosestCenterlineID = col_character(),
+                  ClosestCenterlineType = col_character(), Neighborhood = col_character(),
+                  ObjectId = col_double()
+                ))
+stopifnot(nrow(raw) == meta$subset_rows, !anyDuplicated(raw$ObjectId))
+
+# ArcGIS dates are milliseconds since the Unix epoch; the service declares UTC.
+availability <- raw |>
+  mutate(across(where(is.character), ~ na_if(na_if(trimws(.x), ""), "NULL")),
+         poll_time = as.POSIXct(PollTime / 1000, origin = "1970-01-01", tz = "UTC"),
+         local_hour = as.integer(format(poll_time, tz = "America/Chicago", format = "%H")))
+
+tibble(scope = c("Full service", "Selected local day"),
+       rows = c(meta$full_dataset_rows, nrow(raw)))
+glimpse(availability)
+```
+
+## Fields, missing values, and coverage
+
+```{r}
+# Retain centerline IDs as text, even when they look numeric.
+meta$schema$fields |> select(name, type, nullable) |> knitr::kable()
+
+tibble(variable = names(raw),
+       missing = vapply(availability[names(raw)], function(x) sum(is.na(x)), integer(1)),
+       percent_missing = round(100 * missing / nrow(raw), 2)) |>
+  knitr::kable()
+
+availability |>
+  summarise(first_poll_utc = min(poll_time), last_poll_utc = max(poll_time),
+            distinct_poll_times = n_distinct(poll_time),
+            companies = n_distinct(CompanyName, na.rm = TRUE),
+            neighborhoods = n_distinct(Neighborhood, na.rm = TRUE),
+            negative_counts = sum(NumberAvailable < 0, na.rm = TRUE),
+            zero_counts = sum(NumberAvailable == 0, na.rm = TRUE)) |>
+  knitr::kable()
+
+summary(availability$NumberAvailable)
+availability |> count(CompanyName, name = "records", sort = TRUE)
+availability |> count(ClosestCenterlineType, name = "records", sort = TRUE)
+
+# Inspect repeated candidate keys before assuming one row per segment/poll.
+duplicate_keys <- availability |>
+  count(PollTime, CompanyName, ClosestCenterlineID, ClosestCenterlineType,
+        Neighborhood, name = "records") |>
+  filter(records > 1)
+tibble(repeated_candidate_keys = nrow(duplicate_keys),
+       records_in_repeated_keys = sum(duplicate_keys$records))
+head(duplicate_keys, 10)
+```
+
+On this selected day, `r sum(is.na(availability$ClosestCenterlineID))`
+records (`r round(100 * mean(is.na(availability$ClosestCenterlineID)), 1)`%)
+have no centerline ID after converting literal `"NULL"` values to missing.
+These records would need explicit accounting in a later map.
+
+## How large are individual reported counts?
+
+```{r}
+#| label: fig-count-distribution
+#| fig-cap: "Distribution of counts per record on the selected day."
+ggplot(availability, aes(NumberAvailable)) +
+  geom_histogram(binwidth = 1, boundary = -0.5, fill = "#247B91", color = "white") +
+  scale_y_continuous(trans = "log1p") +
+  labs(title = "Distribution of reported availability per record",
+       subtitle = "July 15, 2024",
+       x = "Available vehicles per record", y = "Records (log1p scale)") +
+  theme_minimal()
+```
+
+Exactly `r round(100 * mean(availability$NumberAvailable == 3), 1)`% of
+records report **3** available vehicles. That concentration is worth investigating;
+the field documentation does not explain it, so we should not assume a cause.
+The maximum is `r max(availability$NumberAvailable)` vehicles in one record,
+which could warrant inspecting the associated segment before mapping it.
+
+## How does recorded availability change over the day?
+
+```{r}
+# Sum within a poll and company, never across hours to estimate unique vehicles.
+# Preserve a missing total if any contributing count is unknown.
+by_poll <- availability |>
+  group_by(poll_time, CompanyName) |>
+  summarise(available = if (anyNA(NumberAvailable)) NA_real_ else sum(NumberAvailable),
+            records = n(), .groups = "drop")
+
+by_poll |> group_by(CompanyName) |>
+  summarise(observed_polls = n(), min_rows_per_poll = min(records),
+            max_rows_per_poll = max(records), .groups = "drop") |>
+  knitr::kable()
+
+# Points avoid implying continuous observation between polls or across gaps.
+ggplot(by_poll, aes(poll_time, available, color = CompanyName)) +
+  geom_point(size = 2) +
+  scale_x_datetime(timezone = "America/Chicago", date_labels = "%H:%M", date_breaks = "4 hours") +
+  labs(title = "Recorded availability at each poll, by company",
+       subtitle = "July 15, 2024; changes can reflect reporting as well as actual availability",
+       x = "Minneapolis local time", y = "Sum of reported available vehicles", color = "Company") +
+  theme_minimal()
+```
+
+## Questions to investigate next
+
+- Are polls present at every expected hour for each company? Missing polls
+  should remain missing, rather than being replaced by zero.
+- Do company patterns persist across other days and seasons?
+- How often is the centerline ID missing, and does that vary by company?
+- After joining the matching street and trail geometry, where is availability
+  concentrated? A missing segment record does not establish zero availability.
+
+There is no separate vehicle-type field, although company labels include
+"Lime Bikes" and "Veo Bikes". Availability alone cannot measure ridership,
+demand, or equitable access. Neighborhood
+comparisons would also need a justified denominator and reporting-coverage checks.
+
+
+
